@@ -2,9 +2,10 @@ package db
 
 import (
 	"database/sql"
+	"os"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/lib/pq"
 
 	"github.com/laura838/shld-i-buy-this/models"
 )
@@ -13,22 +14,23 @@ const schema = `
 CREATE TABLE IF NOT EXISTS user_profile (
     id INTEGER PRIMARY KEY,
     purchase_patterns TEXT NOT NULL,
-    created_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     product TEXT NOT NULL,
     verdict TEXT NOT NULL,
     reasoning TEXT NOT NULL,
-    created_at DATETIME NOT NULL
+    created_at TIMESTAMP NOT NULL
 );
 `
 
-// InitDB opens (or creates) the SQLite database file and runs schema migrations.
-func InitDB(path string) (*sql.DB, error) {
-	conn, err := sql.Open("sqlite3", path)
+// InitDB opens a connection to PostgreSQL and runs schema migrations.
+func InitDB() (*sql.DB, error) {
+	connStr := os.Getenv("DATABASE_URL")
+	conn, err := sql.Open("postgres", connStr)
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +46,7 @@ func WriteProfile(db *sql.DB, profile models.UserProfile) error {
 	now := time.Now()
 	_, err := db.Exec(`
 		INSERT INTO user_profile (id, purchase_patterns, created_at, updated_at)
-		VALUES (1, ?, ?, ?)
+		VALUES (1, $1, $2, $3)
 		ON CONFLICT(id) DO UPDATE SET
 			purchase_patterns = excluded.purchase_patterns,
 			updated_at = excluded.updated_at
@@ -69,7 +71,7 @@ func ReadProfile(db *sql.DB) (*models.UserProfile, error) {
 func WriteSession(db *sql.DB, session models.Session) error {
 	_, err := db.Exec(`
 		INSERT INTO sessions (product, verdict, reasoning, created_at)
-		VALUES (?, ?, ?, ?)
+		VALUES ($1, $2, $3, $4)
 	`, session.Product, session.Verdict, session.Reasoning, session.CreatedAt)
 	return err
 }

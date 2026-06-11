@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -12,9 +13,8 @@ import (
 	"github.com/laura838/shld-i-buy-this/agent"
 	"github.com/laura838/shld-i-buy-this/db"
 	"github.com/laura838/shld-i-buy-this/models"
+	"github.com/laura838/shld-i-buy-this/server"
 )
-
-const dbPath = "shld-i-buy-this.db"
 
 const onboardingPrompt = `Welcome to shld-i-buy-this. Let's set up your profile.
 
@@ -24,9 +24,12 @@ Example: "electronics: AirPods, MacBook, Sony headphones, brands: Apple, Sony. c
 Your profile (press Enter twice when finished):`
 
 func main() {
+	serverMode := flag.Bool("server", false, "run as HTTP server instead of CLI")
+	flag.Parse()
+
 	godotenv.Load()
 
-	conn, err := db.InitDB(dbPath)
+	conn, err := db.InitDB()
 	if err != nil {
 		log.Fatalf("opening database: %v", err)
 	}
@@ -35,6 +38,15 @@ func main() {
 	profile, err := db.ReadProfile(conn)
 	if err != nil {
 		log.Fatalf("reading profile: %v", err)
+	}
+
+	if *serverMode {
+		if profile == nil {
+			log.Fatalf("no user profile found; run without --server to complete onboarding first")
+		}
+		srv := server.NewServer(conn, profile)
+		log.Println("listening on :8080")
+		log.Fatal(srv.Start())
 	}
 
 	reader := bufio.NewReader(os.Stdin)
