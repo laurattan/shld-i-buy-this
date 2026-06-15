@@ -3,6 +3,7 @@ package server
 import (
 	"database/sql"
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -38,7 +39,8 @@ type errorResponse struct {
 // Start wires routes and starts listening on port 8080.
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/evaluate", corsMiddleware(s.handleEvaluate))
+	mux.HandleFunc("/evaluate", loggingMiddleware(corsMiddleware(s.handleEvaluate)))
+	mux.HandleFunc("/sessions", loggingMiddleware(corsMiddleware(s.handleSessions)))
 	return http.ListenAndServe(":8080", mux)
 }
 
@@ -75,13 +77,51 @@ func (s *Server) handleEvaluate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, evaluateResponse{Verdict: decision.Label, Reasoning: decision.Reasoning})
 }
 
+type sessionResponse struct {
+	Product   string         `json:"product"`
+	Verdict   models.Verdict `json:"verdict"`
+	Reasoning string         `json:"reasoning"`
+	CreatedAt time.Time      `json:"created_at"`
+}
+
+// handleSessions returns all past sessions ordered by created_at descending.
+func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	rows, err := s.db.Query("SELECT product, verdict, reasoning, created_at FROM sessions ORDER BY created_at DESC")
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	sessions := []sessionResponse{}
+	for rows.Next() {
+		var sess sessionResponse
+		if err := rows.Scan(&sess.Product, &sess.Verdict, &sess.Reasoning, &sess.CreatedAt); err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
+			return
+		}
+		sessions = append(sessions, sess)
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, sessions)
+}
+
 // corsMiddleware adds CORS headers to allow requests from any origin and
 // responds to preflight OPTIONS requests, which browsers send before a
 // cross-origin POST with a JSON body.
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
 		if r.Method == http.MethodOptions {
@@ -91,6 +131,27 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		next(w, r)
 	}
+}
+
+// loggingMiddleware logs each request's method, path, status code, and duration.
+func loggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next(rec, r)
+		log.Printf("%s %s %d %.2fms", r.Method, r.URL.Path, rec.status, float64(time.Since(start).Microseconds())/1000)
+	}
+}
+
+// statusRecorder wraps http.ResponseWriter to capture the status code written.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
