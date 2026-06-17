@@ -13,10 +13,12 @@ import (
 const schema = `
 CREATE TABLE IF NOT EXISTS user_profile (
     id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT '',
     purchase_patterns TEXT NOT NULL,
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL
 );
+ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS sessions (
     id SERIAL PRIMARY KEY,
@@ -45,26 +47,27 @@ func InitDB() (*sql.DB, error) {
 func WriteProfile(db *sql.DB, profile models.UserProfile) error {
 	now := time.Now()
 	_, err := db.Exec(`
-		INSERT INTO user_profile (id, purchase_patterns, created_at, updated_at)
-		VALUES (1, $1, $2, $3)
+		INSERT INTO user_profile (id, name, purchase_patterns, created_at, updated_at)
+		VALUES (1, $1, $2, $3, $4)
 		ON CONFLICT(id) DO UPDATE SET
+			name = excluded.name,
 			purchase_patterns = excluded.purchase_patterns,
 			updated_at = excluded.updated_at
-	`, profile.PurchasePatterns, now, now)
+	`, profile.Name, profile.PurchasePatterns, now, now)
 	return err
 }
 
 // ReadProfile fetches the user profile. Returns nil, nil if no profile exists.
 func ReadProfile(db *sql.DB) (*models.UserProfile, error) {
-	var purchasePatterns string
-	err := db.QueryRow("SELECT purchase_patterns FROM user_profile WHERE id = 1").Scan(&purchasePatterns)
+	var name, purchasePatterns string
+	err := db.QueryRow("SELECT name, purchase_patterns FROM user_profile WHERE id = 1").Scan(&name, &purchasePatterns)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &models.UserProfile{PurchasePatterns: purchasePatterns}, nil
+	return &models.UserProfile{Name: name, PurchasePatterns: purchasePatterns}, nil
 }
 
 // WriteSession persists a completed evaluation session.

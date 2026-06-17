@@ -11,16 +11,23 @@ const (
 	VerdictDoNotBuy        Verdict = "do_not_buy"
 )
 
+type Alternative struct {
+	Name  string `json:"name"`
+	Price string `json:"price"`
+}
+
 // Decision is what the agent returns in memory after evaluating a product.
 type Decision struct {
-	ProductName string  `json:"product_name"`
-	Label       Verdict `json:"label"`
-	Reasoning   string  `json:"reasoning"`
+	ProductName  string        `json:"product_name"`
+	Label        Verdict       `json:"label"`
+	Reasoning    string        `json:"reasoning"`
+	Alternatives []Alternative `json:"alternatives,omitempty"`
 }
 
 // UserProfile holds the user's purchase patterns, collected during onboarding.
 // Used as context in every agent evaluation.
 type UserProfile struct {
+	Name             string
 	PurchasePatterns string
 }
 

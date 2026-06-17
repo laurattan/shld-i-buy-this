@@ -33,9 +33,10 @@ type evaluateRequest struct {
 }
 
 type evaluateResponse struct {
-	ProductName string         `json:"product_name"`
-	Verdict     models.Verdict `json:"verdict"`
-	Reasoning   string         `json:"reasoning"`
+	ProductName  string              `json:"product_name"`
+	Verdict      models.Verdict      `json:"verdict"`
+	Reasoning    string              `json:"reasoning"`
+	Alternatives []models.Alternative `json:"alternatives,omitempty"`
 }
 
 type errorResponse struct {
@@ -48,6 +49,7 @@ func (s *Server) Start() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/evaluate", loggingMiddleware(corsMiddleware(s.handleEvaluate)))
 	mux.HandleFunc("/sessions", loggingMiddleware(corsMiddleware(s.handleSessions)))
+	mux.HandleFunc("/profile", loggingMiddleware(corsMiddleware(s.handleProfile)))
 	return http.ListenAndServe(":8080", mux)
 }
 
@@ -92,7 +94,12 @@ func (s *Server) handleEvaluate(w http.ResponseWriter, r *http.Request) {
 		log.Printf("cache get error: %v", err)
 	} else if cached != nil {
 		log.Printf("cache hit for %q", productKey)
-		writeJSON(w, http.StatusOK, evaluateResponse{ProductName: cached.ProductName, Verdict: cached.Label, Reasoning: cached.Reasoning})
+		writeJSON(w, http.StatusOK, evaluateResponse{ProductName: cached.ProductName, Verdict: cached.Label, Reasoning: cached.Reasoning, Alternatives: cached.Alternatives})
+		return
+	}
+
+	if s.profile == nil {
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "profile not set up yet"})
 		return
 	}
 
@@ -142,7 +149,7 @@ func (s *Server) handleEvaluate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, evaluateResponse{ProductName: decision.ProductName, Verdict: decision.Label, Reasoning: decision.Reasoning})
+	writeJSON(w, http.StatusOK, evaluateResponse{ProductName: decision.ProductName, Verdict: decision.Label, Reasoning: decision.Reasoning, Alternatives: decision.Alternatives})
 }
 
 type sessionResponse struct {
@@ -183,13 +190,57 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, sessions)
 }
 
+type profileRequest struct {
+	Name             string `json:"name"`
+	PurchasePatterns string `json:"purchase_patterns"`
+}
+
+type profileResponse struct {
+	Name             string `json:"name"`
+	PurchasePatterns string `json:"purchase_patterns"`
+}
+
+// handleProfile handles GET /profile and PUT /profile.
+func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		profile, err := db.ReadProfile(s.db)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
+			return
+		}
+		if profile == nil {
+			writeJSON(w, http.StatusOK, struct{}{})
+			return
+		}
+		writeJSON(w, http.StatusOK, profileResponse{Name: profile.Name, PurchasePatterns: profile.PurchasePatterns})
+
+	case http.MethodPut:
+		var req profileRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "invalid request body"})
+			return
+		}
+		profile := models.UserProfile{Name: req.Name, PurchasePatterns: req.PurchasePatterns}
+		if err := db.WriteProfile(s.db, profile); err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
+			return
+		}
+		s.profile = &profile
+		writeJSON(w, http.StatusOK, profileResponse{Name: profile.Name, PurchasePatterns: profile.PurchasePatterns})
+
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
 // corsMiddleware adds CORS headers to allow requests from any origin and
 // responds to preflight OPTIONS requests, which browsers send before a
 // cross-origin POST with a JSON body.
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
 		if r.Method == http.MethodOptions {

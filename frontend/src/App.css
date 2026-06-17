@@ -84,6 +84,36 @@
   color: var(--text);
 }
 
+.decision-alternatives {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+}
+
+.decision-alternative-item {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 14px;
+}
+
+.alt-name {
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.alt-leader {
+  flex: 1;
+  border-bottom: 1px dotted var(--border);
+  margin-bottom: 4px;
+  min-width: 16px;
+}
+
+.alt-price {
+  font-weight: bold;
+  white-space: nowrap;
+}
+
 .error {
   color: red;
 }
@@ -97,4 +127,51 @@ form {
 
 form input {
   flex: 1;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 24px;
+  width: 480px;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+}
+
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px 8px;
+}
+
+.modal textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: inherit;
+  font-size: inherit;
+  padding: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 4px;
 }

@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"text/template"
+	"time"
 
 	"github.com/laura838/shld-i-buy-this/models"
 )
@@ -20,19 +20,6 @@ const (
 	modelID          = "claude-sonnet-4-6"
 	maxTokens        = 1024
 )
-
-const systemPromptTemplate = `You are a pre-purchase impulse-control assistant. Your job is to help the user decide whether to buy a product.
-
-The user's purchase patterns:
-{{.PurchasePatterns}}
-
-Instructions:
-- Always use web search to research the product before deciding.
-- For find_alternative verdicts, include specific alternatives with prices in your reasoning.
-- Never return a decision without reasoning.
-- Return only a JSON object with exactly these fields, no markdown, no extra text:
-  {"product_name": "canonical product name", "label": "buy" | "wait" | "find_alternative" | "do_not_buy", "reasoning": "2-4 sentences"}
-`
 
 // contentBlock is the subset of fields we need from a response content block,
 // regardless of its type (text, server_tool_use, web_search_tool_result, etc).
@@ -67,13 +54,9 @@ func Evaluate(product string, profile models.UserProfile) (*models.Decision, err
 		return nil, fmt.Errorf("ANTHROPIC_API_KEY is not set")
 	}
 
-	tmpl, err := template.New("system").Parse(systemPromptTemplate)
+	systemPromptStr, err := buildSystemPrompt(profile)
 	if err != nil {
-		return nil, fmt.Errorf("parsing system prompt template: %w", err)
-	}
-	var systemPrompt bytes.Buffer
-	if err := tmpl.Execute(&systemPrompt, profile); err != nil {
-		return nil, fmt.Errorf("executing system prompt template: %w", err)
+		return nil, err
 	}
 
 	messages := []map[string]any{
@@ -90,7 +73,7 @@ func Evaluate(product string, profile models.UserProfile) (*models.Decision, err
 		reqBody := apiRequest{
 			Model:     modelID,
 			MaxTokens: maxTokens,
-			System:    systemPrompt.String(),
+			System:    systemPromptStr,
 			Messages:  messages,
 			Tools:     tools,
 		}
@@ -108,6 +91,7 @@ func Evaluate(product string, profile models.UserProfile) (*models.Decision, err
 		req.Header.Set("x-api-key", apiKey)
 		req.Header.Set("anthropic-version", anthropicVersion)
 
+		callStart := time.Now()
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("calling Anthropic API: %w", err)
@@ -115,6 +99,7 @@ func Evaluate(product string, profile models.UserProfile) (*models.Decision, err
 
 		respBytes, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
+		log.Printf("API call took %s", time.Since(callStart))
 		if err != nil {
 			return nil, fmt.Errorf("reading response body: %w", err)
 		}

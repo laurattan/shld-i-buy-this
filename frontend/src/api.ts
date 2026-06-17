@@ -1,6 +1,6 @@
-import type { Session, Verdict } from "./types";
+import type { Alternative, Profile, Session, Verdict } from "./types";
 
-type EvaluateResult = { product_name: string; verdict: Verdict; reasoning: string };
+type EvaluateResult = { product_name: string; verdict: Verdict; reasoning: string; alternatives?: Alternative[] };
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -26,6 +26,24 @@ export async function evaluate(product: string): Promise<EvaluateResult> {
     throw err;
   }
 
+  return response.json();
+}
+
+export async function getProfile(): Promise<Profile | null> {
+  const { response } = await loggedFetch(`${API_URL}/profile`, { method: "GET" });
+  if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
+  const body = await response.json();
+  if (!body.purchase_patterns) return null;
+  return body as Profile;
+}
+
+export async function updateProfile(profile: Pick<Profile, "name" | "purchase_patterns">): Promise<Profile> {
+  const { response } = await loggedFetch(`${API_URL}/profile`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: profile.name, purchase_patterns: profile.purchase_patterns }),
+  });
+  if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
   return response.json();
 }
 

@@ -42,9 +42,6 @@ func main() {
 	}
 
 	if *serverMode {
-		if profile == nil {
-			log.Fatalf("no user profile found; run without --server to complete onboarding first")
-		}
 		redisClient := cache.NewClient(os.Getenv("REDIS_URL"))
 		srv := server.NewServer(conn, profile, redisClient)
 		log.Println("listening on :8080")
