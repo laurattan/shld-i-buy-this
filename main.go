@@ -11,6 +11,7 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/laura838/shld-i-buy-this/agent"
+	"github.com/laura838/shld-i-buy-this/cache"
 	"github.com/laura838/shld-i-buy-this/db"
 	"github.com/laura838/shld-i-buy-this/models"
 	"github.com/laura838/shld-i-buy-this/server"
@@ -44,7 +45,8 @@ func main() {
 		if profile == nil {
 			log.Fatalf("no user profile found; run without --server to complete onboarding first")
 		}
-		srv := server.NewServer(conn, profile)
+		redisClient := cache.NewClient(os.Getenv("REDIS_URL"))
+		srv := server.NewServer(conn, profile, redisClient)
 		log.Println("listening on :8080")
 		log.Fatal(srv.Start())
 	}

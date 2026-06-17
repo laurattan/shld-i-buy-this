@@ -7,10 +7,10 @@ const verdictColors: Record<Evaluation["verdict"], string> = {
   do_not_buy: "red",
 };
 
-export default function DecisionDisplay({ product, verdict, reasoning }: Evaluation) {
+export default function DecisionDisplay({ product_name, verdict, reasoning }: Evaluation) {
   return (
     <div className="decision-card">
-      <p className="decision-product">{product}</p>
+      <p className="decision-product">{product_name}</p>
       <p className="decision-verdict" style={{ color: verdictColors[verdict] }}>
         {verdict}
       </p>

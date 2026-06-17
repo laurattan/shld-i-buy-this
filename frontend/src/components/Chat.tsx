@@ -5,9 +5,10 @@ import DecisionDisplay from "./DecisionDisplay";
 interface ChatProps {
   evaluations: Evaluation[];
   loading: boolean;
+  error: string | null;
 }
 
-export default function Chat({ evaluations, loading }: ChatProps) {
+export default function Chat({ evaluations, loading, error }: ChatProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -20,6 +21,7 @@ export default function Chat({ evaluations, loading }: ChatProps) {
         <DecisionDisplay key={i} {...evaluation} />
       ))}
       {loading && <p className="analyzing">Analyzing...</p>}
+      {error && <p className="error">{error}</p>}
       <div ref={bottomRef} />
     </div>
   );

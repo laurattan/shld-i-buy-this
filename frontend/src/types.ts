@@ -2,6 +2,7 @@ export type Verdict = "buy" | "wait" | "find_alternative" | "do_not_buy";
 
 export interface Evaluation {
   product: string;
+  product_name: string;
   verdict: Verdict;
   reasoning: string;
 }

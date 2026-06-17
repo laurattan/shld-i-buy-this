@@ -13,8 +13,9 @@ const (
 
 // Decision is what the agent returns in memory after evaluating a product.
 type Decision struct {
-	Label     Verdict `json:"label"`
-	Reasoning string  `json:"reasoning"`
+	ProductName string  `json:"product_name"`
+	Label       Verdict `json:"label"`
+	Reasoning   string  `json:"reasoning"`
 }
 
 // UserProfile holds the user's purchase patterns, collected during onboarding.

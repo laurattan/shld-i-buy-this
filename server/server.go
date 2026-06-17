@@ -1,26 +1,31 @@
 package server
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/laura838/shld-i-buy-this/agent"
+	"github.com/laura838/shld-i-buy-this/cache"
 	"github.com/laura838/shld-i-buy-this/db"
 	"github.com/laura838/shld-i-buy-this/models"
+	"github.com/redis/go-redis/v9"
 )
 
 // Server holds the dependencies needed to handle HTTP requests.
 type Server struct {
 	db      *sql.DB
 	profile *models.UserProfile
+	redis   *redis.Client
 }
 
 // NewServer creates a Server with the given dependencies.
-func NewServer(db *sql.DB, profile *models.UserProfile) *Server {
-	return &Server{db: db, profile: profile}
+func NewServer(db *sql.DB, profile *models.UserProfile, redisClient *redis.Client) *Server {
+	return &Server{db: db, profile: profile, redis: redisClient}
 }
 
 type evaluateRequest struct {
@@ -28,12 +33,14 @@ type evaluateRequest struct {
 }
 
 type evaluateResponse struct {
-	Verdict   models.Verdict `json:"verdict"`
-	Reasoning string         `json:"reasoning"`
+	ProductName string         `json:"product_name"`
+	Verdict     models.Verdict `json:"verdict"`
+	Reasoning   string         `json:"reasoning"`
 }
 
 type errorResponse struct {
-	Error string `json:"error"`
+	Error   string         `json:"error"`
+	Verdict models.Verdict `json:"verdict,omitempty"`
 }
 
 // Start wires routes and starts listening on port 8080.
@@ -57,10 +64,71 @@ func (s *Server) handleEvaluate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ctx := context.Background()
+
+	// 1. Rate limit: 10 requests per hour globally.
+	ok, err := cache.CheckRateLimit(ctx, s.redis, "ratelimit:global", 10, time.Hour)
+	if err != nil {
+		log.Printf("rate limit check error: %v", err)
+	} else if !ok {
+		writeJSON(w, http.StatusTooManyRequests, errorResponse{Error: "rate limit exceeded"})
+		return
+	}
+
+	productKey := strings.ToLower(strings.TrimSpace(req.Product))
+
+	// 2. Cooldown: reject if this product was recently evaluated with do_not_buy or wait.
+	cooldownVerdict, err := cache.CheckCooldown(ctx, s.redis, "cooldown:"+productKey)
+	if err != nil {
+		log.Printf("cooldown check error: %v", err)
+	} else if cooldownVerdict != "" {
+		writeJSON(w, http.StatusTooManyRequests, errorResponse{Error: "you recently evaluated this product", Verdict: models.Verdict(cooldownVerdict)})
+		return
+	}
+
+	// 3. Cache: return cached decision if available.
+	cached, err := cache.GetCachedDecision(ctx, s.redis, "cache:"+productKey)
+	if err != nil {
+		log.Printf("cache get error: %v", err)
+	} else if cached != nil {
+		log.Printf("cache hit for %q", productKey)
+		writeJSON(w, http.StatusOK, evaluateResponse{ProductName: cached.ProductName, Verdict: cached.Label, Reasoning: cached.Reasoning})
+		return
+	}
+
+	// 4. Evaluate via Claude.
 	decision, err := agent.Evaluate(req.Product, *s.profile)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
 		return
+	}
+
+	// 5. Cache the decision under both the canonical product_name and the raw
+	// input key so either path hits on subsequent lookups.
+	cacheKey := strings.ToLower(strings.TrimSpace(decision.ProductName))
+	if cacheKey == "" {
+		cacheKey = productKey
+	}
+	if err := cache.SetCachedDecision(ctx, s.redis, "cache:"+cacheKey, decision, 24*time.Hour); err != nil {
+		log.Printf("cache set error: %v", err)
+	}
+	if cacheKey != productKey {
+		if err := cache.SetCachedDecision(ctx, s.redis, "cache:"+productKey, decision, 24*time.Hour); err != nil {
+			log.Printf("cache set error (raw key): %v", err)
+		}
+	}
+
+	// 6. Set cooldown for do_not_buy and wait verdicts under both keys.
+	if decision.Label == models.VerdictDoNotBuy || decision.Label == models.VerdictWait {
+		verdict := string(decision.Label)
+		if err := cache.SetCooldown(ctx, s.redis, "cooldown:"+cacheKey, verdict, time.Hour); err != nil {
+			log.Printf("cooldown set error: %v", err)
+		}
+		if cacheKey != productKey {
+			if err := cache.SetCooldown(ctx, s.redis, "cooldown:"+productKey, verdict, time.Hour); err != nil {
+				log.Printf("cooldown set error (raw key): %v", err)
+			}
+		}
 	}
 
 	session := models.Session{
@@ -74,7 +142,7 @@ func (s *Server) handleEvaluate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, evaluateResponse{Verdict: decision.Label, Reasoning: decision.Reasoning})
+	writeJSON(w, http.StatusOK, evaluateResponse{ProductName: decision.ProductName, Verdict: decision.Label, Reasoning: decision.Reasoning})
 }
 
 type sessionResponse struct {

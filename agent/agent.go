@@ -31,7 +31,7 @@ Instructions:
 - For find_alternative verdicts, include specific alternatives with prices in your reasoning.
 - Never return a decision without reasoning.
 - Return only a JSON object with exactly these fields, no markdown, no extra text:
-  {"label": "buy" | "wait" | "find_alternative" | "do_not_buy", "reasoning": "2-4 sentences"}
+  {"product_name": "canonical product name", "label": "buy" | "wait" | "find_alternative" | "do_not_buy", "reasoning": "2-4 sentences"}
 `
 
 // contentBlock is the subset of fields we need from a response content block,

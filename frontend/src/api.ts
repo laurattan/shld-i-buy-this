@@ -1,5 +1,7 @@
 import type { Session, Verdict } from "./types";
 
+type EvaluateResult = { product_name: string; verdict: Verdict; reasoning: string };
+
 const API_URL = import.meta.env.VITE_API_URL;
 
 async function loggedFetch(url: string, options: RequestInit) {
@@ -10,7 +12,7 @@ async function loggedFetch(url: string, options: RequestInit) {
   return { response, responseTimeSec };
 }
 
-export async function evaluate(product: string): Promise<{ verdict: Verdict; reasoning: string }> {
+export async function evaluate(product: string): Promise<EvaluateResult> {
   const { response } = await loggedFetch(`${API_URL}/evaluate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -18,7 +20,10 @@ export async function evaluate(product: string): Promise<{ verdict: Verdict; rea
   });
 
   if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
+    const body = await response.json().catch(() => null);
+    const err = new Error(body?.error ?? `Request failed with status ${response.status}`) as Error & { verdict?: string };
+    if (body?.verdict) err.verdict = body.verdict;
+    throw err;
   }
 
   return response.json();
