@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"os"
 	"time"
 
@@ -23,10 +24,14 @@ ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';
 CREATE TABLE IF NOT EXISTS sessions (
     id SERIAL PRIMARY KEY,
     product TEXT NOT NULL,
+    product_name TEXT NOT NULL DEFAULT '',
     verdict TEXT NOT NULL,
     reasoning TEXT NOT NULL,
+    alternatives JSONB NOT NULL DEFAULT '[]',
     created_at TIMESTAMP NOT NULL
 );
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS product_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS alternatives JSONB NOT NULL DEFAULT '[]';
 `
 
 // InitDB opens a connection to PostgreSQL and runs schema migrations.
@@ -72,9 +77,13 @@ func ReadProfile(db *sql.DB) (*models.UserProfile, error) {
 
 // WriteSession persists a completed evaluation session.
 func WriteSession(db *sql.DB, session models.Session) error {
-	_, err := db.Exec(`
-		INSERT INTO sessions (product, verdict, reasoning, created_at)
-		VALUES ($1, $2, $3, $4)
-	`, session.Product, session.Verdict, session.Reasoning, session.CreatedAt)
+	altsJSON, err := json.Marshal(session.Alternatives)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(`
+		INSERT INTO sessions (product, product_name, verdict, reasoning, alternatives, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, session.Product, session.ProductName, session.Verdict, session.Reasoning, altsJSON, session.CreatedAt)
 	return err
 }

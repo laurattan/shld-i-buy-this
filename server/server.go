@@ -139,10 +139,12 @@ func (s *Server) handleEvaluate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	session := models.Session{
-		Product:   req.Product,
-		Verdict:   decision.Label,
-		Reasoning: decision.Reasoning,
-		CreatedAt: time.Now(),
+		Product:      req.Product,
+		ProductName:  decision.ProductName,
+		Verdict:      decision.Label,
+		Reasoning:    decision.Reasoning,
+		Alternatives: decision.Alternatives,
+		CreatedAt:    time.Now(),
 	}
 	if err := db.WriteSession(s.db, session); err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
@@ -153,10 +155,13 @@ func (s *Server) handleEvaluate(w http.ResponseWriter, r *http.Request) {
 }
 
 type sessionResponse struct {
-	Product   string         `json:"product"`
-	Verdict   models.Verdict `json:"verdict"`
-	Reasoning string         `json:"reasoning"`
-	CreatedAt time.Time      `json:"created_at"`
+	ID           int                  `json:"id"`
+	Product      string               `json:"product"`
+	ProductName  string               `json:"product_name"`
+	Verdict      models.Verdict       `json:"verdict"`
+	Reasoning    string               `json:"reasoning"`
+	Alternatives []models.Alternative `json:"alternatives,omitempty"`
+	CreatedAt    time.Time            `json:"created_at"`
 }
 
 // handleSessions returns all past sessions ordered by created_at descending.
@@ -166,7 +171,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := s.db.Query("SELECT product, verdict, reasoning, created_at FROM sessions ORDER BY created_at DESC")
+	rows, err := s.db.Query("SELECT id, product, product_name, verdict, reasoning, alternatives, created_at FROM sessions ORDER BY created_at DESC")
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
 		return
@@ -176,9 +181,13 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	sessions := []sessionResponse{}
 	for rows.Next() {
 		var sess sessionResponse
-		if err := rows.Scan(&sess.Product, &sess.Verdict, &sess.Reasoning, &sess.CreatedAt); err != nil {
+		var altsJSON []byte
+		if err := rows.Scan(&sess.ID, &sess.Product, &sess.ProductName, &sess.Verdict, &sess.Reasoning, &altsJSON, &sess.CreatedAt); err != nil {
 			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
 			return
+		}
+		if len(altsJSON) > 0 {
+			json.Unmarshal(altsJSON, &sess.Alternatives)
 		}
 		sessions = append(sessions, sess)
 	}

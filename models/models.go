@@ -33,9 +33,11 @@ type UserProfile struct {
 
 // Session is the persisted record of one evaluation. Written to DB in M3.
 type Session struct {
-	ID        int
-	Product   string
-	Verdict   Verdict
-	Reasoning string
-	CreatedAt time.Time
+	ID           int
+	Product      string
+	ProductName  string
+	Verdict      Verdict
+	Reasoning    string
+	Alternatives []Alternative
+	CreatedAt    time.Time
 }
