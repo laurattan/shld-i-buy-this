@@ -21,8 +21,10 @@ export async function evaluate(product: string): Promise<EvaluateResult> {
 
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    const err = new Error(body?.error ?? `Request failed with status ${response.status}`) as Error & { verdict?: string };
+    const err = new Error(body?.error ?? `Request failed with status ${response.status}`) as Error & { verdict?: string; code?: string; status?: number };
     if (body?.verdict) err.verdict = body.verdict;
+    if (body?.code) err.code = body.code;
+    err.status = response.status;
     throw err;
   }
 
@@ -43,16 +45,18 @@ export async function updateProfile(profile: Pick<Profile, "name" | "purchase_pa
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name: profile.name, purchase_patterns: profile.purchase_patterns }),
   });
-  if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
+  if (!response.ok) throw new Error("Couldn't save your profile — try again.");
   return response.json();
 }
 
-export async function getSessions(): Promise<Session[]> {
-  const { response } = await loggedFetch(`${API_URL}/sessions`, { method: "GET" });
-
+export async function getSessions(params?: { limit?: number; offset?: number; asc?: boolean }): Promise<Session[]> {
+  let url = `${API_URL}/sessions`;
+  if (params?.limit !== undefined) {
+    url += `?limit=${params.limit}&offset=${params.offset ?? 0}${params.asc ? "&asc=1" : ""}`;
+  }
+  const { response } = await loggedFetch(url, { method: "GET" });
   if (!response.ok) {
     throw new Error(`Request failed with status ${response.status}`);
   }
-
   return response.json();
 }

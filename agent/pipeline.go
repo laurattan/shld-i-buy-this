@@ -5,6 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,7 +24,7 @@ type Analysis struct {
 
 // research investigates the product and forms a verdict + reasoning in a
 // single combined, profile-aware call. If the verdict is find_alternative,
-// it brainstorms and concurrently verifies 2-3 candidate alternatives
+// it brainstorms and concurrently verifies 5 candidate alternatives
 // before returning.
 func research(ctx context.Context, product string, profile models.UserProfile) (*Analysis, error) {
 	systemPrompt, err := buildResearchPrompt(profile)
@@ -76,7 +80,7 @@ func research(ctx context.Context, product string, profile models.UserProfile) (
 	return analysis, nil
 }
 
-// brainstormCandidates suggests 2-3 specific alternative product names,
+// brainstormCandidates suggests 5 specific alternative product names,
 // informed by the user's profile.
 func brainstormCandidates(ctx context.Context, analysis Analysis, profile models.UserProfile) ([]string, error) {
 	systemPrompt, err := buildCandidatesPrompt(analysis, profile)
@@ -85,7 +89,7 @@ func brainstormCandidates(ctx context.Context, analysis Analysis, profile models
 	}
 
 	messages := []map[string]any{
-		{"role": "user", "content": "Suggest 2-3 specific alternative product names."},
+		{"role": "user", "content": "Suggest 5 specific alternative product names."},
 	}
 
 	text, err := callClaude(ctx, systemPrompt, messages, false)
@@ -109,7 +113,7 @@ func brainstormCandidates(ctx context.Context, analysis Analysis, profile models
 }
 
 // researchAlternatives verifies each candidate's real price/quality in
-// parallel, one goroutine per candidate, each bounded by a 30s timeout.
+// parallel, one goroutine per candidate, each bounded by a 45s timeout.
 // Returns only the candidates that were successfully verified.
 func researchAlternatives(ctx context.Context, candidates []string) []models.Alternative {
 	results := make([]models.Alternative, len(candidates))
@@ -118,7 +122,7 @@ func researchAlternatives(ctx context.Context, candidates []string) []models.Alt
 		wg.Add(1)
 		go func(i int, candidate string) {
 			defer wg.Done()
-			candidateCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			candidateCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 			defer cancel()
 			alt, err := researchOneCandidate(candidateCtx, candidate)
 			if err != nil {
@@ -130,11 +134,29 @@ func researchAlternatives(ctx context.Context, candidates []string) []models.Alt
 	}
 	wg.Wait()
 
+	parsePrice := func(s string) float64 {
+		s = strings.NewReplacer("$", "", ",", "").Replace(s)
+		v, _ := strconv.ParseFloat(strings.TrimSpace(s), 64)
+		return v
+	}
+
 	var out []models.Alternative
 	for _, a := range results {
-		if a.Name != "" {
-			out = append(out, a)
+		if a.Name == "" {
+			continue
 		}
+		if parsePrice(a.Price) == math.MaxFloat64 {
+			log.Printf("[research] dropping candidate %q: unparseable price %q", a.Name, a.Price)
+			continue
+		}
+		out = append(out, a)
+	}
+	
+	sort.Slice(out, func(i, j int) bool {
+		return parsePrice(out[i].Price) < parsePrice(out[j].Price)
+	})
+	if len(out) > 3 {
+		out = out[:3]
 	}
 	log.Printf("[research] verified %d/%d candidates", len(out), len(candidates))
 	return out

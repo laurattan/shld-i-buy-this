@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -14,6 +15,26 @@ import (
 
 	"github.com/laura838/shld-i-buy-this/models"
 )
+
+type ErrorCode string
+
+const (
+	ErrCodeInsufficientCredits ErrorCode = "insufficient_credits"
+	ErrCodeInvalidRequest      ErrorCode = "invalid_request"
+	ErrCodeRateLimited         ErrorCode = "rate_limited"
+	ErrCodeTimeout             ErrorCode = "timeout"
+	ErrCodeNetwork             ErrorCode = "network_error"
+	ErrCodeUnknown             ErrorCode = "unknown"
+)
+
+type AgentError struct {
+	Code    ErrorCode
+	Message string
+	Err     error
+}
+
+func (e *AgentError) Error() string { return e.Message }
+func (e *AgentError) Unwrap() error { return e.Err }
 
 const (
 	apiURL           = "https://api.anthropic.com/v1/messages"
@@ -56,8 +77,8 @@ func callClaude(ctx context.Context, systemPrompt string, messages []map[string]
 	var tools []map[string]any
 	if withTools {
 		tools = []map[string]any{
-			{"type": "web_search_20260209", "name": "web_search", "max_uses": 4},
-			{"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 4},
+			{"type": "web_search_20260209", "name": "web_search", "max_uses": 5},
+			{"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 3},
 		}
 	}
 
@@ -80,12 +101,12 @@ func callClaude(ctx context.Context, systemPrompt string, messages []map[string]
 
 		bodyBytes, err := json.Marshal(reqBody)
 		if err != nil {
-			return "", fmt.Errorf("marshaling request: %w", err)
+			return "", &AgentError{Code: ErrCodeUnknown, Message: "Something unexpected happened — try again.", Err: err}
 		}
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(bodyBytes))
 		if err != nil {
-			return "", fmt.Errorf("building request: %w", err)
+			return "", &AgentError{Code: ErrCodeUnknown, Message: "Something unexpected happened — try again.", Err: err}
 		}
 		req.Header.Set("content-type", "application/json")
 		req.Header.Set("x-api-key", apiKey)
@@ -94,7 +115,10 @@ func callClaude(ctx context.Context, systemPrompt string, messages []map[string]
 		callStart := time.Now()
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
-			return "", fmt.Errorf("calling Anthropic API: %w", err)
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return "", &AgentError{Code: ErrCodeTimeout, Message: "That took longer than expected — try again.", Err: err}
+			}
+			return "", &AgentError{Code: ErrCodeNetwork, Message: "We couldn't reach our research service — try again.", Err: err}
 		}
 
 		respBytes, err := io.ReadAll(resp.Body)
@@ -104,16 +128,32 @@ func callClaude(ctx context.Context, systemPrompt string, messages []map[string]
 			return "", fmt.Errorf("reading response body: %w", err)
 		}
 
-		if resp.StatusCode != http.StatusOK {
-			return "", fmt.Errorf("Anthropic API returned status %d: %s", resp.StatusCode, string(respBytes))
-		}
-
 		var apiResp apiResponse
 		if err := json.Unmarshal(respBytes, &apiResp); err != nil {
-			return "", fmt.Errorf("unmarshaling response: %w", err)
+			log.Printf("unmarshaling response (status %d): %v body: %s", resp.StatusCode, err, string(respBytes))
+			return "", &AgentError{Code: ErrCodeUnknown, Message: "Something unexpected happened — try again.", Err: err}
 		}
+
+		if resp.StatusCode != http.StatusOK {
+			rawErr := fmt.Errorf("Anthropic API returned status %d: %s", resp.StatusCode, string(respBytes))
+			log.Printf("%v", rawErr)
+			if apiResp.Error != nil {
+				switch {
+				case apiResp.Error.Type == "invalid_request_error" && strings.Contains(apiResp.Error.Message, "credit balance"):
+					return "", &AgentError{Code: ErrCodeInsufficientCredits, Message: "We're temporarily unable to research products — please try again later.", Err: rawErr}
+				case apiResp.Error.Type == "invalid_request_error":
+					return "", &AgentError{Code: ErrCodeInvalidRequest, Message: "Something went wrong processing that request.", Err: rawErr}
+				case apiResp.Error.Type == "rate_limit_error":
+					return "", &AgentError{Code: ErrCodeRateLimited, Message: "We're getting a lot of requests right now — try again in a moment.", Err: rawErr}
+				}
+			}
+			return "", &AgentError{Code: ErrCodeUnknown, Message: "Something unexpected happened — try again.", Err: rawErr}
+		}
+
 		if apiResp.Error != nil {
-			return "", fmt.Errorf("Anthropic API error: %s", apiResp.Error.Message)
+			rawErr := fmt.Errorf("Anthropic API error: %s", apiResp.Error.Message)
+			log.Printf("%v", rawErr)
+			return "", &AgentError{Code: ErrCodeUnknown, Message: "Something unexpected happened — try again.", Err: rawErr}
 		}
 
 		var textParts []string

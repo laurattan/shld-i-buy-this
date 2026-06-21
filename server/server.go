@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,6 +43,7 @@ type evaluateResponse struct {
 
 type errorResponse struct {
 	Error   string         `json:"error"`
+	Code    string         `json:"code,omitempty"`
 	Verdict models.Verdict `json:"verdict,omitempty"`
 }
 
@@ -106,7 +109,19 @@ func (s *Server) handleEvaluate(w http.ResponseWriter, r *http.Request) {
 	// 4. Evaluate via Claude.
 	decision, err := agent.Evaluate(req.Product, *s.profile)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		var agentErr *agent.AgentError
+		if errors.As(err, &agentErr) {
+			writeJSON(w, http.StatusInternalServerError, errorResponse{
+				Error: agentErr.Message,
+				Code:  string(agentErr.Code),
+			})
+		} else {
+			log.Printf("unclassified evaluate error: %v", err)
+			writeJSON(w, http.StatusInternalServerError, errorResponse{
+				Error: "Something went wrong — try again.",
+				Code:  string(agent.ErrCodeUnknown),
+			})
+		}
 		return
 	}
 
@@ -164,14 +179,32 @@ type sessionResponse struct {
 	CreatedAt    time.Time            `json:"created_at"`
 }
 
-// handleSessions returns all past sessions ordered by created_at descending.
+// handleSessions returns sessions ordered by created_at descending.
+// Supports optional ?limit=N&offset=N for pagination; omitting limit returns all rows.
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
 
-	rows, err := s.db.Query("SELECT id, product, product_name, verdict, reasoning, alternatives, created_at FROM sessions ORDER BY created_at DESC")
+	var rows *sql.Rows
+	var err error
+	limitStr := r.URL.Query().Get("limit")
+	asc := r.URL.Query().Get("asc") == "1"
+	order := "DESC"
+	if asc {
+		order = "ASC"
+	}
+	if limitStr != "" {
+		limit, _ := strconv.Atoi(limitStr)
+		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+		rows, err = s.db.Query(
+			"SELECT id, product, product_name, verdict, reasoning, alternatives, created_at FROM sessions ORDER BY created_at "+order+" LIMIT $1 OFFSET $2",
+			limit, offset,
+		)
+	} else {
+		rows, err = s.db.Query("SELECT id, product, product_name, verdict, reasoning, alternatives, created_at FROM sessions ORDER BY created_at " + order)
+	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
 		return

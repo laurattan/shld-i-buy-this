@@ -1,16 +1,23 @@
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&display=swap');
 
-  font: 16px/145% system-ui, "Segoe UI", Roboto, sans-serif;
-  color: var(--text-h);
-  background: var(--bg);
+:root {
+  --paper: #F7F4EC;
+  --ink: #2B2A26;
+  --ink-faded: #8A8678;
+  --stamp-red: #C23B2E;
+  --stamp-green: #3F7A4E;
+  --stamp-amber: #C98A1E;
+  --stamp-blue: #2E5FA3;
+
+  --header-height: 64px;
+  --left-panel-width: 368px;
+  --sidebar-width: 380px;
 }
 
 * {
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
 html,
@@ -20,23 +27,94 @@ body,
 }
 
 body {
-  margin: 0;
-}
-
-input,
-button {
-  font: inherit;
-  font-size: 16px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
+  font-family: 'Space Mono', monospace;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 18px;
+  line-height: 1.5;
 }
 
 button {
+  font-family: 'Space Mono', monospace;
   cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
 }
 
 button:disabled {
-  cursor: default;
-  opacity: 0.6;
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+input,
+textarea {
+  font-family: 'Space Mono', monospace;
+  font-size: 16px;
+}
+
+/* ── utilities ── */
+
+.font-accent {
+  font-family: 'Courier Prime', monospace;
+  font-style: italic;
+}
+
+.shadow-paper {
+  box-shadow:
+    0 1px 2px rgba(43, 42, 38, 0.08),
+    0 6px 14px rgba(43, 42, 38, 0.06);
+}
+
+.perf {
+  border: none;
+  border-top: 2px dashed var(--ink-faded);
+  opacity: 0.55;
+}
+
+.paper-grain {
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgba(43, 42, 38, 0.025) 0px,
+    rgba(43, 42, 38, 0.025) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+.ink-stamp {
+  mix-blend-mode: multiply;
+  letter-spacing: 0.06em;
+}
+
+/* ── animations ── */
+
+@keyframes stamp-in {
+  0% {
+    transform: scale(1.6) rotate(var(--stamp-rot, -4deg));
+    opacity: 0;
+  }
+  60% {
+    transform: scale(0.94) rotate(var(--stamp-rot, -4deg));
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(var(--stamp-rot, -4deg));
+    opacity: 0.92;
+  }
+}
+
+.animate-stamp {
+  animation: stamp-in 0.35s cubic-bezier(0.2, 0.8, 0.3, 1.2) both;
+}
+
+@keyframes blink {
+  0%,
+  100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+.animate-blink {
+  animation: blink 1s steps(2, start) infinite;
 }

@@ -32,12 +32,14 @@ Reasoning format and tone:
 - Warm and conversational, like honest advice from a friend, not clinical or blunt
 - Plain prose, not bullet points
 
+Always return the JSON object — never respond with conversational text alone. If the input is ambiguous, make the most common-sense interpretation (e.g., treat a brand name as its flagship product, assume the most recent generation, pick the standard consumer version) and proceed. Do not ask for clarification.
+
 Return only a JSON object with exactly these fields, no markdown, no extra text:
 {"product_name": "canonical product name", "verdict": "buy" | "wait" | "find_alternative" | "do_not_buy", "reasoning": "2-4 sentences", "needs_alternatives": true | false}
 
 "needs_alternatives" must be true only when verdict is "find_alternative".`
 
-const analyzeCandidatesPromptTemplate = `You are a product recommendation assistant. Based on the analysis below and the user's purchase patterns, suggest 2-3 specific alternative products (brand + model) that would be better value than the product already analyzed.
+const analyzeCandidatesPromptTemplate = `You are a product recommendation assistant. Based on the analysis below and the user's purchase patterns, suggest 5 specific alternative products (brand + model) that would be better value than the product already analyzed.
 
 Product analyzed: {{.ProductName}}
 Why an alternative was recommended: {{.Reasoning}}
@@ -45,10 +47,16 @@ Why an alternative was recommended: {{.Reasoning}}
 The user's purchase patterns:
 {{.PurchasePatterns}}
 
-Match your suggestions to the user's spending tier — don't suggest budget options if the user typically buys premium, and don't suggest premium options if the user is price-sensitive.
+When suggesting alternatives:
+- Read the reasoning carefully to understand exactly why an alternative was recommended (e.g. brand premium over efficacy, overpriced for the category, better options exist at similar price) — suggest alternatives that address that specific reason, not just products in the same category generally.
+- Read the original product's price from the reasoning text — if the reason is cost, your suggestions should actually be cheaper than that price.
+- Prefer specific, unambiguous product names. Avoid brands with many near-identical SKUs (e.g. if suggesting The Ordinary, name the exact product and concentration precisely — "The Ordinary Retinol 1% in Squalane" not just "The Ordinary retinol"). Ambiguous names are hard to verify and often fail.
+- Match suggestions to the user's spending tier — don't suggest budget options if the user typically buys premium, and don't suggest premium options if the user is price-sensitive.
+One-line addition to analyzeCandidatesPromptTemplate, right after the existing spending-tier instruction:
+- Avoid suggesting brands the user already buys — if a brand appears in their purchase patterns, suggest a different brand that offers comparable value. The user already knows about and has access to their existing brands; a new recommendation is more useful.
 
 Return only a JSON object with exactly this field, no markdown, no extra text:
-{"candidates": ["Brand Model 1", "Brand Model 2", "Brand Model 3"]}`
+{"candidates": ["Brand Model 1", "Brand Model 2", "Brand Model 3", "Brand Model 4", "Brand Model 5"]}`
 
 const researchCandidatePromptTemplate = `You are a product price research assistant. The user will name a specific product. Look up its current standard-size retail price.
 
