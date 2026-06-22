@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"text/template"
 
-	"github.com/laura838/shld-i-buy-this/models"
+	"github.com/laurattan/shld-i-buy-this/models"
 )
 
 const researchPromptTemplate = `You are a pre-purchase impulse-control assistant. Your job is to research a product and decide whether the user should buy it.

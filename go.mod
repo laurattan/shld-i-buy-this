@@ -1,4 +1,4 @@
-module github.com/laura838/shld-i-buy-this
+module github.com/laurattan/shld-i-buy-this
 
 go 1.26.4
 

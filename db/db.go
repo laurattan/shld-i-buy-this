@@ -8,7 +8,7 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/laura838/shld-i-buy-this/models"
+	"github.com/laurattan/shld-i-buy-this/models"
 )
 
 const schema = `

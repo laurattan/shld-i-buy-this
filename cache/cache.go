@@ -3,14 +3,23 @@ package cache
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"time"
 
-	"github.com/laura838/shld-i-buy-this/models"
+	"github.com/laurattan/shld-i-buy-this/models"
 	"github.com/redis/go-redis/v9"
 )
 
 func NewClient(addr string) *redis.Client {
-	return redis.NewClient(&redis.Options{Addr: addr})
+	if addr == "" {
+		return redis.NewClient(&redis.Options{Addr: "localhost:6379"})
+	}
+	opt, err := redis.ParseURL(addr)
+	if err != nil {
+		log.Printf("redis: failed to parse URL %q: %v — falling back to localhost", addr, err)
+		return redis.NewClient(&redis.Options{Addr: "localhost:6379"})
+	}
+	return redis.NewClient(opt)
 }
 
 func GetCachedDecision(ctx context.Context, client *redis.Client, key string) (*models.Decision, error) {

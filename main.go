@@ -5,16 +5,17 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
-	"github.com/laura838/shld-i-buy-this/agent"
-	"github.com/laura838/shld-i-buy-this/cache"
-	"github.com/laura838/shld-i-buy-this/db"
-	"github.com/laura838/shld-i-buy-this/models"
-	"github.com/laura838/shld-i-buy-this/server"
+	"github.com/laurattan/shld-i-buy-this/agent"
+	"github.com/laurattan/shld-i-buy-this/cache"
+	"github.com/laurattan/shld-i-buy-this/db"
+	"github.com/laurattan/shld-i-buy-this/models"
+	"github.com/laurattan/shld-i-buy-this/server"
 )
 
 const onboardingPrompt = `Welcome to shld-i-buy-this. Let's set up your profile.
@@ -45,7 +46,10 @@ func main() {
 		redisClient := cache.NewClient(os.Getenv("REDIS_URL"))
 		srv := server.NewServer(conn, profile, redisClient)
 		log.Println("listening on :8080")
-		log.Fatal(srv.Start())
+		if err := srv.Start(); err != nil && err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
+		return
 	}
 
 	reader := bufio.NewReader(os.Stdin)

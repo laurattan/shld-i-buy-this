@@ -7,14 +7,17 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
-	"github.com/laura838/shld-i-buy-this/agent"
-	"github.com/laura838/shld-i-buy-this/cache"
-	"github.com/laura838/shld-i-buy-this/db"
-	"github.com/laura838/shld-i-buy-this/models"
+	"github.com/laurattan/shld-i-buy-this/agent"
+	"github.com/laurattan/shld-i-buy-this/cache"
+	"github.com/laurattan/shld-i-buy-this/db"
+	"github.com/laurattan/shld-i-buy-this/models"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -35,9 +38,9 @@ type evaluateRequest struct {
 }
 
 type evaluateResponse struct {
-	ProductName  string              `json:"product_name"`
-	Verdict      models.Verdict      `json:"verdict"`
-	Reasoning    string              `json:"reasoning"`
+	ProductName  string               `json:"product_name"`
+	Verdict      models.Verdict       `json:"verdict"`
+	Reasoning    string               `json:"reasoning"`
 	Alternatives []models.Alternative `json:"alternatives,omitempty"`
 }
 
@@ -53,7 +56,34 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/evaluate", loggingMiddleware(corsMiddleware(s.handleEvaluate)))
 	mux.HandleFunc("/sessions", loggingMiddleware(corsMiddleware(s.handleSessions)))
 	mux.HandleFunc("/profile", loggingMiddleware(corsMiddleware(s.handleProfile)))
-	return http.ListenAndServe(":8080", mux)
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	httpServer := &http.Server{
+		Addr:         ":" + port,
+		Handler:      mux,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 120 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		<-ctx.Done()
+		log.Println("shutting down")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		httpServer.Shutdown(shutdownCtx)
+	}()
+
+	return httpServer.ListenAndServe()
 }
 
 // handleEvaluate handles POST /evaluate.
@@ -281,7 +311,11 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 // cross-origin POST with a JSON body.
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := os.Getenv("ALLOWED_ORIGIN")
+		if origin == "" {
+			origin = "*"
+		}
+		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 

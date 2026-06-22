@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/laura838/shld-i-buy-this/models"
+	"github.com/laurattan/shld-i-buy-this/models"
 )
 
 type Analysis struct {
@@ -151,7 +151,7 @@ func researchAlternatives(ctx context.Context, candidates []string) []models.Alt
 		}
 		out = append(out, a)
 	}
-	
+
 	sort.Slice(out, func(i, j int) bool {
 		return parsePrice(out[i].Price) < parsePrice(out[j].Price)
 	})
